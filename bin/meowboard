@@ -1,0 +1,1655 @@
+#!/usr/bin/env python3
+
+import ctypes
+import json
+import os
+import socket
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkX11", "3.0")
+
+from gi.repository import Gtk, Gdk, GdkX11, Gio, GLib, Pango
+
+
+APP_NAME = "🐱 Meowboard"
+
+DEFAULT_SETTINGS = {
+    "opacity": 0.90,
+    "default_preview": True
+}
+
+CUSTOM_SHORTCUT_PATH = (
+    "/org/gnome/settings-daemon/plugins/"
+    "media-keys/custom-keybindings/meowboard/"
+)
+
+ICON_FILE = os.path.expanduser(
+    "~/.local/share/icons/hicolor/128x128/apps/meowboard.png"
+)
+
+MAX_HISTORY = 100
+
+DATA_DIR = os.path.expanduser(
+    "~/.local/share/meowboard"
+)
+
+HISTORY_FILE = os.path.join(
+    DATA_DIR,
+    "history.json"
+)
+
+SETTINGS_FILE = os.path.join(
+    DATA_DIR,
+    "settings.json"
+)
+
+SOCKET_FILE = os.path.join(
+    os.environ.get(
+        "XDG_RUNTIME_DIR",
+        "/tmp"
+    ),
+    "meowboard.sock"
+)
+
+
+class ClipboardApp(Gtk.Window):
+
+    def __init__(self):
+        super().__init__(
+            title=APP_NAME
+            # type=Gtk.WindowType.POPUP
+        )
+
+        self.set_default_size(
+            700,
+            550
+        )
+
+        self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
+        self.set_icon_from_file(ICON_FILE)
+
+        # Ask GNOME to treat this as a dialog/popup window.
+        self.set_type_hint(
+            Gdk.WindowTypeHint.DIALOG
+        )
+
+        self.set_modal(False)
+
+        self.settings = self.load_settings()
+        self.history = []
+        self.filtered_history = []
+        self.preview_position_initialized = False
+
+        self.load_history()
+        self.build_ui()
+
+        # Clipboard monitoring
+        self.clipboard = Gtk.Clipboard.get(
+            Gdk.SELECTION_CLIPBOARD
+        )
+
+        self.clipboard.connect(
+            "owner-change",
+            self.on_clipboard_changed
+        )
+
+        # Keyboard shortcuts
+        self.connect(
+            "key-press-event",
+            self.on_key_press
+        )
+
+        # Hide instead of quitting
+        self.connect(
+            "delete-event",
+            self.on_delete_event
+        )
+
+        self.update_list()
+
+        # Start hidden
+        self.hide()
+
+        # Local control socket
+        self.start_socket_server()
+
+    # ======================================================
+    # Storage
+    # ======================================================
+
+    def load_settings(self):
+
+        settings = dict(DEFAULT_SETTINGS)
+
+        try:
+
+            with open(
+                SETTINGS_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                saved = json.load(f)
+
+            if isinstance(
+                saved.get("opacity"),
+                (int, float)
+            ):
+                settings["opacity"] = max(
+                    0.5,
+                    min(float(saved["opacity"]), 1.0)
+                )
+
+            if isinstance(
+                saved.get("default_preview"),
+                bool
+            ):
+                settings["default_preview"] = (
+                    saved["default_preview"]
+                )
+
+        except (
+            FileNotFoundError,
+            json.JSONDecodeError,
+            AttributeError,
+            OSError
+        ):
+            pass
+
+        return settings
+
+    def save_settings(self):
+
+        os.makedirs(
+            DATA_DIR,
+            exist_ok=True
+        )
+
+        temp_file = SETTINGS_FILE + ".tmp"
+
+        with open(
+            temp_file,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                self.settings,
+                f,
+                indent=2
+            )
+
+        os.replace(
+            temp_file,
+            SETTINGS_FILE
+        )
+
+    def load_history(self):
+
+        os.makedirs(
+            DATA_DIR,
+            exist_ok=True
+        )
+
+        if not os.path.exists(HISTORY_FILE):
+            return
+
+        try:
+
+            with open(
+                HISTORY_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                data = json.load(f)
+
+                if isinstance(data, list):
+                    self.history = data[
+                        :MAX_HISTORY
+                    ]
+
+        except Exception as e:
+
+            print(
+                f"Could not load history: {e}"
+            )
+
+    def save_history(self):
+
+        os.makedirs(
+            DATA_DIR,
+            exist_ok=True
+        )
+
+        temp_file = (
+            HISTORY_FILE + ".tmp"
+        )
+
+        try:
+
+            with open(
+                temp_file,
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                json.dump(
+                    self.history[
+                        :MAX_HISTORY
+                    ],
+                    f,
+                    ensure_ascii=False,
+                    indent=2
+                )
+
+            os.replace(
+                temp_file,
+                HISTORY_FILE
+            )
+
+        except Exception as e:
+
+            print(
+                f"Could not save history: {e}"
+            )
+
+    # ======================================================
+    # UI
+    # ======================================================
+
+    def build_ui(self):
+
+        main = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=8
+        )
+
+        main.set_border_width(12)
+
+        self.add(main)
+
+        # Header
+        header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=10
+        )
+
+        main.pack_start(
+            header,
+            False,
+            False,
+            0
+        )
+
+        title = Gtk.Label()
+
+        title.set_markup(
+            "<b><big>🐱 Meowboard</big></b>"
+        )
+
+        title.set_xalign(0)
+
+        header.pack_start(
+            title,
+            True,
+            True,
+            0
+        )
+
+        self.preview_toggle = Gtk.CheckButton(
+            label="Preview"
+        )
+
+        self.preview_toggle.connect(
+            "toggled",
+            self.on_preview_toggled
+        )
+
+        header.pack_end(
+            self.preview_toggle,
+            False,
+            False,
+            0
+        )
+
+        settings_button = Gtk.Button.new_from_icon_name(
+            "emblem-system-symbolic",
+            Gtk.IconSize.BUTTON
+        )
+        settings_button.set_tooltip_text("Settings")
+        settings_button.connect(
+            "clicked",
+            self.open_settings
+        )
+
+        header.pack_end(
+            settings_button,
+            False,
+            False,
+            0
+        )
+
+        # Search
+        self.search = Gtk.SearchEntry()
+
+        self.search.set_placeholder_text(
+            "Search clipboard history..."
+        )
+
+        self.search.connect(
+            "search-changed",
+            self.on_search_changed
+        )
+
+        self.search.connect(
+            "key-press-event",
+            self.on_key_press
+        )
+
+        main.pack_start(
+            self.search,
+            False,
+            False,
+            0
+        )
+
+        self.content = Gtk.Paned(
+            orientation=Gtk.Orientation.HORIZONTAL
+        )
+
+        self.content.set_position(240)
+        self.content.set_wide_handle(True)
+
+        main.pack_start(
+            self.content,
+            True,
+            True,
+            0
+        )
+
+        # List
+        self.history_scroll = Gtk.ScrolledWindow()
+
+        self.history_scroll.set_policy(
+            Gtk.PolicyType.NEVER,
+            Gtk.PolicyType.AUTOMATIC
+        )
+
+        self.content.pack1(
+            self.history_scroll,
+            True,
+            True
+        )
+
+        self.listbox = Gtk.ListBox()
+
+        self.listbox.set_selection_mode(
+            Gtk.SelectionMode.SINGLE
+        )
+
+        self.listbox.connect(
+            "row-activated",
+            self.on_row_activated
+        )
+
+        self.listbox.connect(
+            "row-selected",
+            self.on_row_selected
+        )
+
+        self.listbox.connect(
+            "key-press-event",
+            self.on_key_press
+        )
+
+        self.history_scroll.add(
+            self.listbox
+        )
+
+        # Selected item preview
+        self.preview_panel = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=6
+        )
+
+        self.preview_panel.set_border_width(8)
+        self.preview_panel.set_no_show_all(True)
+
+        preview_title = Gtk.Label()
+        preview_title.set_markup(
+            "<b>Selected item</b>"
+        )
+        preview_title.set_xalign(0)
+
+        self.preview_panel.pack_start(
+            preview_title,
+            False,
+            False,
+            0
+        )
+
+        preview_scroll = Gtk.ScrolledWindow()
+        preview_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC,
+            Gtk.PolicyType.AUTOMATIC
+        )
+
+        self.preview_text = Gtk.TextView()
+        self.preview_text.set_editable(False)
+        self.preview_text.set_cursor_visible(False)
+        self.preview_text.set_wrap_mode(
+            Gtk.WrapMode.WORD_CHAR
+        )
+        self.preview_text.set_monospace(True)
+
+        preview_scroll.add(
+            self.preview_text
+        )
+
+        self.preview_panel.pack_start(
+            preview_scroll,
+            True,
+            True,
+            0
+        )
+
+        self.content.pack2(
+            self.preview_panel,
+            True,
+            True
+        )
+
+        self.preview_toggle.set_active(
+            self.settings["default_preview"]
+        )
+
+        # Bottom buttons
+        buttons = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=6
+        )
+
+        main.pack_start(
+            buttons,
+            False,
+            False,
+            0
+        )
+
+        copy_button = Gtk.Button(
+            label="Copy Selected"
+        )
+
+        copy_button.connect(
+            "clicked",
+            self.copy_selected
+        )
+
+        buttons.pack_start(
+            copy_button,
+            False,
+            False,
+            0
+        )
+
+        delete_button = Gtk.Button(
+            label="Delete"
+        )
+
+        delete_button.connect(
+            "clicked",
+            self.delete_selected
+        )
+
+        buttons.pack_start(
+            delete_button,
+            False,
+            False,
+            0
+        )
+
+        clear_button = Gtk.Button(
+            label="Clear History"
+        )
+
+        clear_button.connect(
+            "clicked",
+            self.clear_history
+        )
+
+        buttons.pack_start(
+            clear_button,
+            False,
+            False,
+            0
+        )
+
+        self.status = Gtk.Label()
+
+        self.status.set_xalign(0)
+
+        main.pack_start(
+            self.status,
+            False,
+            False,
+            0
+        )
+
+    # ======================================================
+    # Settings
+    # ======================================================
+
+    def open_settings(
+        self,
+        button=None
+    ):
+
+        dialog = Gtk.Dialog(
+            title="🐱 Meowboard Settings",
+            transient_for=self,
+            flags=Gtk.DialogFlags.MODAL
+        )
+
+        dialog.add_buttons(
+            "Cancel",
+            Gtk.ResponseType.CANCEL,
+            "Apply",
+            Gtk.ResponseType.APPLY
+        )
+        dialog.set_default_response(
+            Gtk.ResponseType.APPLY
+        )
+
+        grid = Gtk.Grid(
+            column_spacing=14,
+            row_spacing=12
+        )
+        grid.set_border_width(14)
+
+        dialog.get_content_area().add(grid)
+
+        opacity_label = Gtk.Label(
+            label="Window opacity"
+        )
+        opacity_label.set_xalign(0)
+
+        opacity_scale = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL,
+            50,
+            100,
+            5
+        )
+        opacity_scale.set_value(
+            self.settings["opacity"] * 100
+        )
+        opacity_scale.set_digits(0)
+        opacity_scale.set_value_pos(
+            Gtk.PositionType.RIGHT
+        )
+        opacity_scale.set_hexpand(True)
+
+        grid.attach(
+            opacity_label,
+            0,
+            0,
+            1,
+            1
+        )
+        grid.attach(
+            opacity_scale,
+            1,
+            0,
+            1,
+            1
+        )
+
+        preview_label = Gtk.Label(
+            label="Preview by default"
+        )
+        preview_label.set_xalign(0)
+
+        preview_switch = Gtk.Switch()
+        preview_switch.set_active(
+            self.settings["default_preview"]
+        )
+        preview_switch.set_halign(
+            Gtk.Align.START
+        )
+
+        grid.attach(
+            preview_label,
+            0,
+            1,
+            1,
+            1
+        )
+        grid.attach(
+            preview_switch,
+            1,
+            1,
+            1,
+            1
+        )
+
+        shortcut_label = Gtk.Label(
+            label="Toggle shortcut"
+        )
+        shortcut_label.set_xalign(0)
+
+        shortcut_entry = Gtk.Entry()
+        shortcut_entry.set_editable(False)
+        shortcut_entry.set_can_focus(True)
+        shortcut_entry.set_placeholder_text(
+            "Click, then press shortcut"
+        )
+
+        self.pending_shortcut = (
+            self.get_toggle_shortcut()
+        )
+        shortcut_entry.set_text(
+            self.format_shortcut(
+                self.pending_shortcut
+            )
+        )
+        shortcut_entry.connect(
+            "key-press-event",
+            self.on_shortcut_key_press
+        )
+
+        grid.attach(
+            shortcut_label,
+            0,
+            2,
+            1,
+            1
+        )
+        grid.attach(
+            shortcut_entry,
+            1,
+            2,
+            1,
+            1
+        )
+
+        shortcut_help = Gtk.Label(
+            label=(
+                "Select the field and press a new "
+                "shortcut. Backspace disables it."
+            )
+        )
+        shortcut_help.set_xalign(0)
+        shortcut_help.get_style_context().add_class(
+            "dim-label"
+        )
+
+        grid.attach(
+            shortcut_help,
+            1,
+            3,
+            1,
+            1
+        )
+
+        dialog.show_all()
+        response = dialog.run()
+
+        if response == Gtk.ResponseType.APPLY:
+
+            self.settings["opacity"] = (
+                opacity_scale.get_value() / 100
+            )
+            self.settings["default_preview"] = (
+                preview_switch.get_active()
+            )
+
+            self.save_settings()
+            self.save_toggle_shortcut(
+                self.pending_shortcut
+            )
+
+            self.preview_toggle.set_active(
+                self.settings["default_preview"]
+            )
+
+            window = self.get_window()
+
+            if window:
+                self.apply_window_opacity(window)
+
+        dialog.destroy()
+
+    def on_shortcut_key_press(
+        self,
+        entry,
+        event
+    ):
+
+        key = Gdk.keyval_name(event.keyval)
+
+        if key in (
+            "BackSpace",
+            "Delete"
+        ):
+            self.pending_shortcut = ""
+            entry.set_text("Disabled")
+            return True
+
+        if key in (
+            "Control_L",
+            "Control_R",
+            "Shift_L",
+            "Shift_R",
+            "Alt_L",
+            "Alt_R",
+            "Super_L",
+            "Super_R",
+            "Meta_L",
+            "Meta_R"
+        ):
+            return True
+
+        modifiers = (
+            event.state
+            & Gtk.accelerator_get_default_mod_mask()
+        )
+
+        if not Gtk.accelerator_valid(
+            event.keyval,
+            modifiers
+        ):
+            return True
+
+        self.pending_shortcut = Gtk.accelerator_name(
+            event.keyval,
+            modifiers
+        )
+        entry.set_text(
+            self.format_shortcut(
+                self.pending_shortcut
+            )
+        )
+
+        return True
+
+    def format_shortcut(self, shortcut):
+
+        if not shortcut:
+            return "Disabled"
+
+        key, modifiers = Gtk.accelerator_parse(
+            shortcut
+        )
+
+        if not key:
+            return shortcut
+
+        return Gtk.accelerator_get_label(
+            key,
+            modifiers
+        )
+
+    def get_toggle_shortcut(self):
+
+        settings = Gio.Settings.new_with_path(
+            (
+                "org.gnome.settings-daemon.plugins."
+                "media-keys.custom-keybinding"
+            ),
+            CUSTOM_SHORTCUT_PATH
+        )
+
+        return settings.get_string("binding")
+
+    def save_toggle_shortcut(self, shortcut):
+
+        media_settings = Gio.Settings.new(
+            (
+                "org.gnome.settings-daemon.plugins."
+                "media-keys"
+            )
+        )
+        paths = list(
+            media_settings.get_strv(
+                "custom-keybindings"
+            )
+        )
+
+        if CUSTOM_SHORTCUT_PATH not in paths:
+            paths.append(CUSTOM_SHORTCUT_PATH)
+            media_settings.set_strv(
+                "custom-keybindings",
+                paths
+            )
+
+        settings = Gio.Settings.new_with_path(
+            (
+                "org.gnome.settings-daemon.plugins."
+                "media-keys.custom-keybinding"
+            ),
+            CUSTOM_SHORTCUT_PATH
+        )
+
+        settings.set_string(
+            "name",
+            APP_NAME
+        )
+        settings.set_string(
+            "command",
+            os.path.expanduser(
+                "~/.local/bin/meowboard-toggle"
+            )
+        )
+        settings.set_string(
+            "binding",
+            shortcut
+        )
+
+        Gio.Settings.sync()
+
+    # ======================================================
+    # Clipboard monitoring
+    # ======================================================
+
+    def on_clipboard_changed(
+        self,
+        clipboard,
+        event
+    ):
+
+        GLib.idle_add(
+            self.read_clipboard
+        )
+
+    def read_clipboard(self):
+
+        try:
+
+            text = self.clipboard.wait_for_text()
+
+            if text:
+                self.add_clipboard(text)
+
+        except Exception:
+            pass
+
+        return False
+
+    def add_clipboard(
+        self,
+        text
+    ):
+
+        text = text.strip("\x00")
+
+        if not text:
+            return
+
+        # Ignore if already newest item
+        if self.history:
+            if self.history[0] == text:
+                return
+
+        # Remove duplicate
+        if text in self.history:
+            self.history.remove(text)
+
+        # Newest first
+        self.history.insert(
+            0,
+            text
+        )
+
+        self.history = self.history[
+            :MAX_HISTORY
+        ]
+
+        self.save_history()
+
+        self.update_list()
+
+    # ======================================================
+    # List
+    # ======================================================
+
+    def update_list(self):
+
+        for row in self.listbox.get_children():
+            self.listbox.remove(row)
+
+        query = (
+            self.search.get_text()
+            .lower()
+        )
+
+        if query:
+
+            self.filtered_history = [
+                item
+                for item in self.history
+                if query in item.lower()
+            ]
+
+        else:
+
+            self.filtered_history = list(
+                self.history
+            )
+
+        for item in self.filtered_history:
+
+            row = Gtk.ListBoxRow()
+
+            box = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL,
+                spacing=3
+            )
+
+            box.set_border_width(8)
+
+            preview = item.replace(
+                "\n",
+                " ↵ "
+            )
+
+            if len(preview) > 120:
+
+                preview = (
+                    preview[:120]
+                    + "..."
+                )
+
+            label = Gtk.Label(
+                label=preview
+            )
+
+            label.set_xalign(0)
+            label.set_yalign(0)
+            label.set_line_wrap(False)
+            label.set_single_line_mode(True)
+            label.set_max_width_chars(30)
+            label.set_ellipsize(
+                Pango.EllipsizeMode.END
+            )
+
+            box.pack_start(
+                label,
+                True,
+                True,
+                0
+            )
+
+            row.add(box)
+
+            self.listbox.add(row)
+
+        self.listbox.show_all()
+
+        self.status.set_text(
+            f"{len(self.filtered_history)} / "
+            f"{len(self.history)} items"
+        )
+
+        self.update_preview()
+
+    def on_preview_toggled(
+        self,
+        button
+    ):
+
+        if button.get_active():
+            self.preview_panel.set_no_show_all(False)
+            self.preview_panel.show_all()
+            self.update_preview()
+
+        else:
+            self.preview_panel.hide()
+            self.preview_panel.set_no_show_all(True)
+
+    def on_row_selected(
+        self,
+        listbox,
+        row
+    ):
+
+        self.update_preview()
+
+    def update_preview(self):
+
+        item = self.get_selected_item()
+
+        self.preview_text.get_buffer().set_text(
+            item or ""
+        )
+
+    # ======================================================
+    # Search
+    # ======================================================
+
+    def on_search_changed(
+        self,
+        entry
+    ):
+
+        self.update_list()
+
+        first_row = self.listbox.get_row_at_index(0)
+
+        if first_row:
+            self.listbox.select_row(first_row)
+
+    # ======================================================
+    # Selection
+    # ======================================================
+
+    def get_selected_item(self):
+
+        row = self.listbox.get_selected_row()
+
+        if row is None:
+            return None
+
+        index = row.get_index()
+
+        if index < 0:
+            return None
+
+        if index >= len(
+            self.filtered_history
+        ):
+            return None
+
+        return self.filtered_history[index]
+
+    # ======================================================
+    # Copy + close
+    # ======================================================
+
+    def copy_selected(
+        self,
+        button=None
+    ):
+
+        item = self.get_selected_item()
+
+        if item is None:
+            return
+
+        self.clipboard.set_text(
+            item,
+            -1
+        )
+
+        self.clipboard.store()
+
+        self.hide()
+
+        self.search.set_text("")
+
+        GLib.timeout_add(
+            200,
+            self.paste_to_previous_app
+        )
+
+    def paste_to_previous_app(self):
+
+        bus = None
+        session_path = None
+
+        try:
+
+            bus = Gio.bus_get_sync(
+                Gio.BusType.SESSION,
+                None
+            )
+
+            session_path = bus.call_sync(
+                "org.gnome.Mutter.RemoteDesktop",
+                "/org/gnome/Mutter/RemoteDesktop",
+                "org.gnome.Mutter.RemoteDesktop",
+                "CreateSession",
+                None,
+                GLib.VariantType("(o)"),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None
+            ).unpack()[0]
+
+            session_interface = (
+                "org.gnome.Mutter."
+                "RemoteDesktop.Session"
+            )
+
+            bus.call_sync(
+                "org.gnome.Mutter.RemoteDesktop",
+                session_path,
+                session_interface,
+                "Start",
+                None,
+                None,
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None
+            )
+
+            for key, pressed in (
+                (0xffe3, True),
+                (ord("v"), True),
+                (ord("v"), False),
+                (0xffe3, False)
+            ):
+
+                bus.call_sync(
+                    "org.gnome.Mutter.RemoteDesktop",
+                    session_path,
+                    session_interface,
+                    "NotifyKeyboardKeysym",
+                    GLib.Variant(
+                        "(ub)",
+                        (key, pressed)
+                    ),
+                    None,
+                    Gio.DBusCallFlags.NONE,
+                    -1,
+                    None
+                )
+
+        except Exception as e:
+
+            print(
+                f"Could not paste selection: {e}"
+            )
+
+        finally:
+
+            if bus and session_path:
+
+                try:
+
+                    bus.call_sync(
+                        "org.gnome.Mutter.RemoteDesktop",
+                        session_path,
+                        (
+                            "org.gnome.Mutter."
+                            "RemoteDesktop.Session"
+                        ),
+                        "Stop",
+                        None,
+                        None,
+                        Gio.DBusCallFlags.NONE,
+                        -1,
+                        None
+                    )
+
+                except Exception:
+                    pass
+
+        return False
+
+    def on_row_activated(
+        self,
+        listbox,
+        row
+    ):
+
+        self.copy_selected()
+
+    # ======================================================
+    # Keyboard
+    # ======================================================
+
+    def on_key_press(
+        self,
+        widget,
+        event
+    ):
+
+        key = Gdk.keyval_name(
+            event.keyval
+        )
+
+        # Escape = close
+        if key == "Escape":
+
+            self.hide()
+
+            return True
+
+        if (
+            key in (
+                "slash",
+                "KP_Divide"
+            )
+            and not self.search.is_focus()
+        ):
+
+            self.search.grab_focus()
+            self.search.set_position(-1)
+
+            return True
+
+        if key in (
+            "Down",
+            "KP_Down"
+        ):
+
+            return self.move_selection(1)
+
+        if key in (
+            "Up",
+            "KP_Up"
+        ):
+
+            return self.move_selection(-1)
+
+        # Enter = copy
+        if key in (
+            "Return",
+            "KP_Enter"
+        ):
+
+            self.copy_selected()
+
+            return True
+
+        # Ctrl + Delete = delete
+        if (
+            key == "Delete"
+            and
+            event.state
+            & Gdk.ModifierType.CONTROL_MASK
+        ):
+
+            self.delete_selected()
+
+            return True
+
+        return False
+
+    def move_selection(self, offset):
+
+        rows = self.listbox.get_children()
+
+        if not rows:
+            return True
+
+        selected = self.listbox.get_selected_row()
+
+        if selected:
+            index = selected.get_index() + offset
+
+        elif offset > 0:
+            index = 0
+
+        else:
+            index = len(rows) - 1
+
+        index = max(
+            0,
+            min(index, len(rows) - 1)
+        )
+
+        row = rows[index]
+        self.listbox.select_row(row)
+
+        adjustment = (
+            self.history_scroll.get_vadjustment()
+        )
+        allocation = row.get_allocation()
+        top = allocation.y
+        bottom = top + allocation.height
+        visible_top = adjustment.get_value()
+        visible_bottom = (
+            visible_top
+            + adjustment.get_page_size()
+        )
+
+        if top < visible_top:
+            adjustment.set_value(top)
+
+        elif bottom > visible_bottom:
+            adjustment.set_value(
+                bottom - adjustment.get_page_size()
+            )
+
+        return True
+
+    # ======================================================
+    # Delete
+    # ======================================================
+
+    def delete_selected(
+        self,
+        button=None
+    ):
+
+        item = self.get_selected_item()
+
+        if item is None:
+            return
+
+        if item in self.history:
+            self.history.remove(item)
+
+        self.save_history()
+
+        self.update_list()
+
+    # ======================================================
+    # Clear
+    # ======================================================
+
+    def clear_history(
+        self,
+        button=None
+    ):
+
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text="Clear clipboard history?"
+        )
+
+        response = dialog.run()
+
+        dialog.destroy()
+
+        if response != Gtk.ResponseType.YES:
+            return
+
+        self.history = []
+
+        self.save_history()
+
+        self.update_list()
+
+    # ======================================================
+    # Window behavior
+    # ======================================================
+
+    def on_delete_event(
+        self,
+        widget,
+        event
+    ):
+
+        self.hide()
+
+        return True
+
+    def show_clipboard(self):
+
+        self.update_list()
+
+        self.show_all()
+
+        self.present()
+
+        GLib.timeout_add(
+            100,
+            self.focus_clipboard
+        )
+
+        if (
+            self.preview_toggle.get_active()
+            and not self.preview_position_initialized
+        ):
+            GLib.timeout_add(
+                120,
+                self.initialize_preview_position
+            )
+
+        # Select first item
+        first_row = self.listbox.get_row_at_index(0)
+
+        if first_row:
+            self.listbox.select_row(first_row)
+
+    def initialize_preview_position(self):
+
+        self.content.set_position(240)
+        self.preview_position_initialized = True
+
+        return False
+
+    def focus_clipboard(self):
+
+        window = self.get_window()
+
+        if window:
+            self.apply_window_opacity(window)
+            window.raise_()
+            window.focus(Gdk.CURRENT_TIME)
+
+        self.search.grab_focus()
+
+        return False
+
+    def apply_window_opacity(self, window):
+
+        display = None
+
+        try:
+
+            x11 = ctypes.CDLL("libX11.so.6")
+
+            x11.XOpenDisplay.argtypes = [
+                ctypes.c_char_p
+            ]
+            x11.XOpenDisplay.restype = ctypes.c_void_p
+
+            x11.XInternAtom.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_char_p,
+                ctypes.c_int
+            ]
+            x11.XInternAtom.restype = ctypes.c_ulong
+
+            x11.XChangeProperty.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_ulong,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_ubyte),
+                ctypes.c_int
+            ]
+
+            x11.XFlush.argtypes = [
+                ctypes.c_void_p
+            ]
+            x11.XCloseDisplay.argtypes = [
+                ctypes.c_void_p
+            ]
+
+            display = x11.XOpenDisplay(None)
+
+            if not display:
+                return
+
+            opacity_atom = x11.XInternAtom(
+                display,
+                b"_NET_WM_WINDOW_OPACITY",
+                False
+            )
+            cardinal_atom = x11.XInternAtom(
+                display,
+                b"CARDINAL",
+                False
+            )
+            opacity = ctypes.c_ulong(
+                int(
+                    self.settings["opacity"]
+                    * 0xffffffff
+                )
+            )
+
+            x11.XChangeProperty(
+                display,
+                GdkX11.X11Window.get_xid(window),
+                opacity_atom,
+                cardinal_atom,
+                32,
+                0,
+                ctypes.cast(
+                    ctypes.byref(opacity),
+                    ctypes.POINTER(ctypes.c_ubyte)
+                ),
+                1
+            )
+            x11.XFlush(display)
+
+        except Exception as e:
+
+            print(
+                f"Could not set window opacity: {e}"
+            )
+
+        finally:
+
+            if display:
+                x11.XCloseDisplay(display)
+
+    # def show_clipboard(self):
+
+    #     self.update_list()
+
+    #     self.show_all()
+
+    #     self.present()
+
+    #     # Focus search
+    #     self.search.grab_focus()
+
+    #     # Select first item
+    #     if self.listbox.get_row_at_index(0):
+
+    #         self.listbox.select_row(
+    #             self.listbox.get_row_at_index(0)
+    #         )
+
+    # ======================================================
+    # Local socket
+    # ======================================================
+
+    def start_socket_server(self):
+
+        try:
+
+            if os.path.exists(
+                SOCKET_FILE
+            ):
+                os.remove(
+                    SOCKET_FILE
+                )
+
+            self.server = socket.socket(
+                socket.AF_UNIX,
+                socket.SOCK_STREAM
+            )
+
+            self.server.bind(
+                SOCKET_FILE
+            )
+
+            self.server.listen(5)
+
+            self.server.setblocking(False)
+
+            GLib.io_add_watch(
+                self.server,
+                GLib.IO_IN,
+                self.on_socket_ready
+            )
+
+        except Exception as e:
+
+            print(
+                f"Socket error: {e}"
+            )
+
+    def on_socket_ready(
+        self,
+        source,
+        condition
+    ):
+
+        try:
+
+            conn, _ = self.server.accept()
+
+            command = conn.recv(1024).decode()
+
+            conn.close()
+
+            if command == "toggle":
+
+                if self.is_visible():
+
+                    self.hide()
+
+                else:
+
+                    self.show_clipboard()
+
+        except Exception:
+            pass
+
+        return True
+
+
+def send_command(command):
+
+    try:
+
+        client = socket.socket(
+            socket.AF_UNIX,
+            socket.SOCK_STREAM
+        )
+
+        client.connect(
+            SOCKET_FILE
+        )
+
+        client.send(
+            command.encode()
+        )
+
+        client.close()
+
+        return True
+
+    except Exception:
+
+        return False
+
+
+def main():
+
+    # If already running, toggle it.
+    if len(sys.argv) > 1:
+
+        command = sys.argv[1]
+
+        if send_command(command):
+            return
+
+    app = ClipboardApp()
+
+    # If launched with "toggle" and no existing instance,
+    # show it immediately.
+    if len(sys.argv) > 1 and sys.argv[1] == "toggle":
+        app.show_clipboard()
+
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

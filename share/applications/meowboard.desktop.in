@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=🐱 Meowboard
+Comment=Clipboard history manager
+Exec=@HOME@/.local/bin/meowboard toggle
+Icon=@HOME@/.local/share/icons/hicolor/128x128/apps/meowboard.png
+Terminal=false
+StartupNotify=false
+StartupWMClass=Meowboard
+Categories=Utility;
