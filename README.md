@@ -1,6 +1,6 @@
 # 🐱 Meowboard
 
-Clipboard history for GNOME. Meowboard runs in the background, keeps your last 100 copied texts, and opens with a keyboard shortcut.
+Clipboard history for GNOME. Meowboard runs in the background, keeps up to 100 copied texts by default, and opens with a keyboard shortcut.
 - The installer writes only under your home directory. It does not use `sudo`.
 
 ## 🚀 Install
@@ -31,6 +31,7 @@ Open settings with the gear button in the Meowboard window. You can:
 
 - Change the window opacity
 - Show or hide previews by default
+- Set the number of saved clipboard entries from 1 to 1000
 - Record a new toggle shortcut, or disable it with Backspace
 
 Click **Apply** to save your changes.
