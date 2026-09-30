@@ -274,6 +274,11 @@ class ClipboardApp(Gtk.Window):
     # UI
     # ======================================================
 
+    @staticmethod
+    def configure_listbox_activation(listbox):
+
+        listbox.set_activate_on_single_click(False)
+
     def build_ui(self):
 
         main = Gtk.Box(
@@ -399,6 +404,10 @@ class ClipboardApp(Gtk.Window):
         )
 
         self.listbox = Gtk.ListBox()
+
+        self.configure_listbox_activation(
+            self.listbox
+        )
 
         self.listbox.set_selection_mode(
             Gtk.SelectionMode.SINGLE
@@ -1308,12 +1317,12 @@ class ClipboardApp(Gtk.Window):
 
             return True
 
-        # Ctrl + Delete = delete
+        # Delete = remove selected item
         if (
-            key == "Delete"
-            and
-            event.state
-            & Gdk.ModifierType.CONTROL_MASK
+            key in (
+                "Delete",
+                "KP_Delete"
+            )
         ):
 
             self.delete_selected()

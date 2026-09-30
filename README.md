@@ -21,6 +21,16 @@ These are normally included with GNOME. If the dependency check fails, ask an ad
 python3 python3-gi gir1.2-gtk-3.0 gir1.2-gdkpixbuf-2.0 libx11-6
 ```
 
+## 🔄 Update
+
+Re-run the installer to update Meowboard to the latest version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huykeang/meow-board/main/install.sh | bash
+```
+
+The installer replaces the app and restarts its service. Your settings and clipboard history are preserved.
+
 ## 🧩 Usage
 
 Open Meowboard with Ctrl+Shift+Space, or run `meowboard toggle`.
