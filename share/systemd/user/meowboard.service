@@ -1,0 +1,11 @@
+[Unit]
+Description=🐱 Meowboard
+
+[Service]
+Environment=GDK_BACKEND=x11
+ExecStart=%h/.local/bin/meowboard
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
