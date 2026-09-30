@@ -60,5 +60,59 @@ class HistoryLimitTests(unittest.TestCase):
         self.assertEqual(app.history, ["first", "second"])
 
 
+class DeleteKeyTests(unittest.TestCase):
+    def test_delete_key_removes_selected_item(self):
+        calls = []
+        app = SimpleNamespace(
+            search=SimpleNamespace(is_focus=lambda: False),
+            delete_selected=lambda: calls.append("deleted"),
+        )
+        event = SimpleNamespace(
+            keyval=MEOWBOARD.Gdk.KEY_Delete,
+            state=0,
+        )
+
+        handled = MEOWBOARD.ClipboardApp.on_key_press(
+            app,
+            None,
+            event,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(calls, ["deleted"])
+
+    def test_delete_key_removes_item_while_search_has_focus(self):
+        calls = []
+        app = SimpleNamespace(
+            search=SimpleNamespace(is_focus=lambda: True),
+            delete_selected=lambda: calls.append("deleted"),
+        )
+        event = SimpleNamespace(
+            keyval=MEOWBOARD.Gdk.KEY_Delete,
+            state=0,
+        )
+
+        handled = MEOWBOARD.ClipboardApp.on_key_press(
+            app,
+            None,
+            event,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(calls, ["deleted"])
+
+
+class ListActivationTests(unittest.TestCase):
+    def test_list_requires_second_click_to_activate_selected_row(self):
+        activation_modes = []
+        listbox = SimpleNamespace(
+            set_activate_on_single_click=activation_modes.append
+        )
+
+        MEOWBOARD.ClipboardApp.configure_listbox_activation(listbox)
+
+        self.assertEqual(activation_modes, [False])
+
+
 if __name__ == "__main__":
     unittest.main()
