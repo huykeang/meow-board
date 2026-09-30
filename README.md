@@ -1,9 +1,9 @@
 # 🐱 Meowboard
 
 Clipboard history for GNOME. Meowboard runs in the background, keeps your last 100 copied texts, and opens with a keyboard shortcut.
-The installer writes only under your home directory. It does not use `sudo`.
+- The installer writes only under your home directory. It does not use `sudo`.
 
-## Install
+## 🚀 Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/huykeang/meow-board/main/install.sh | bash
@@ -21,11 +21,11 @@ These are normally included with GNOME. If the dependency check fails, ask an ad
 python3 python3-gi gir1.2-gtk-3.0 gir1.2-gdkpixbuf-2.0 libx11-6
 ```
 
-## Usage
+## 🧩 Usage
 
 Open Meowboard with Ctrl+Shift+Space, or run `meowboard toggle`.
 
-## Settings
+## ⚙️ Settings
 
 Open settings with the gear button in the Meowboard window. You can:
 
@@ -35,11 +35,11 @@ Open settings with the gear button in the Meowboard window. You can:
 
 Click **Apply** to save your changes.
 
-## Demo
+## 📹 Demo
 
 ![Meowboard demo](demo/meowboard-demo.gif)
 
-## Uninstall
+## 👋 Uninstall
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/huykeang/meow-board/main/uninstall.sh | bash
