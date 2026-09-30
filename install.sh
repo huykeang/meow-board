@@ -3,8 +3,7 @@
 # This script does not use sudo.
 set -euo pipefail
 
-# Replace OWNER/REPO after you create the public GitHub repository.
-REPO="OWNER/REPO"
+REPO="huykeang/meow-board"
 REF="main"
 
 if [[ "${EUID}" -eq 0 ]]; then
