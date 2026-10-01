@@ -15,8 +15,11 @@ tar -czf "${test_root}/meow-board.tar.gz" -C "${test_root}/archive" meow-board-m
 cat > "${test_root}/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-expected="https://github.com/huykeang/meow-board/archive/refs/heads/main.tar.gz"
-[[ "${1:-}" == "-fsSL" && "${2:-}" == "${expected}" ]]
+expected="https://github.com/huykeang/meow-board/releases/latest/download/meowboard.tar.gz"
+if [[ "${1:-}" != "-fsSL" || "${2:-}" != "${expected}" ]]; then
+    echo "unexpected curl arguments: $*" >&2
+    exit 1
+fi
 cat "${TEST_ARCHIVE}"
 EOF
 chmod 755 "${test_root}" "${test_root}/bin" "${test_root}/bin/curl" "${test_root}/home"

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="huykeang/meow-board"
-REF="main"
+ASSET="meowboard.tar.gz"
 
 if [[ "${EUID}" -eq 0 ]]; then
     echo "Run install.sh as your own user, without sudo." >&2
@@ -23,7 +23,7 @@ if [[ -z "${ROOT}" || ! -f "${ROOT}/bin/meowboard" ]]; then
     fi
 
     tmp="$(mktemp -d)"
-    curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz" \
+    curl -fsSL "https://github.com/${REPO}/releases/latest/download/${ASSET}" \
         | tar -xz -C "${tmp}" --strip-components=1
     bash "${tmp}/install.sh"
     status=$?

@@ -1,0 +1,34 @@
+name: Update install stats
+
+on:
+  schedule:
+    - cron: "15 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refresh stats.json from release downloads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/releases" > releases.json
+          python3 scripts/update_stats.py releases.json stats.json
+
+      - name: Commit stats.json when the count changes
+        run: |
+          if git diff --quiet -- stats.json; then
+            echo "Install count is unchanged."
+            exit 0
+          fi
+          git add stats.json
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Record the latest release download count."
+          git push
