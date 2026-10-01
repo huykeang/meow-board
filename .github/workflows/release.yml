@@ -21,9 +21,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
-          title="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:subject)')"
-          notes="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:body)')"
+          git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/meowboard-release"
+          kind="$(git for-each-ref refs/meowboard-release --format='%(objecttype)')"
+          title=""
+          notes=""
+          if [[ "${kind}" == "tag" ]]; then
+            title="$(git for-each-ref refs/meowboard-release --format='%(contents:subject)')"
+            notes="$(git for-each-ref refs/meowboard-release --format='%(contents:body)')"
+          fi
           if [[ -z "${title}" ]]; then
             title="${GITHUB_REF_NAME}"
           fi
