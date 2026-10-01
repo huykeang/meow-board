@@ -21,6 +21,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" meowboard.tar.gz \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          title="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:subject)')"
+          notes="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents:body)')"
+          if [[ -z "${title}" ]]; then
+            title="${GITHUB_REF_NAME}"
+          fi
+          if [[ -n "${notes//[[:space:]]/}" ]]; then
+            gh release create "${GITHUB_REF_NAME}" meowboard.tar.gz \
+              --title "${title}" \
+              --notes "${notes}"
+          else
+            gh release create "${GITHUB_REF_NAME}" meowboard.tar.gz \
+              --title "${title}" \
+              --generate-notes
+          fi

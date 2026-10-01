@@ -67,6 +67,20 @@ work="$(make_repo explicit)"
 run_deploy "${work}" 1.0.0
 assert_remote_tag "${work}" v1.0.0
 
+work="$(make_repo titled)"
+GIT_COMMITTER_NAME=Meowboard \
+GIT_COMMITTER_EMAIL=meowboard@example.com \
+run_deploy "${work}" 1.0.0 \
+    --title "Header search" \
+    --description "Search sits on the top left."
+assert_remote_tag "${work}" v1.0.0
+origin="$(git -C "${work}" remote get-url origin)"
+subject="$(git -C "${origin}" for-each-ref refs/tags/v1.0.0 --format='%(contents:subject)')"
+body="$(git -C "${origin}" for-each-ref refs/tags/v1.0.0 --format='%(contents:body)')"
+body="${body%$'\n'}"
+[[ "${subject}" == "Header search" ]]
+[[ "${body}" == "Search sits on the top left." ]]
+
 work="$(make_repo minor)"
 tag_repo "${work}" v1.0.0
 run_deploy "${work}" minor
