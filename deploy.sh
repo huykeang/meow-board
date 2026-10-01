@@ -5,7 +5,7 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: deploy.sh <patch|minor|major|X.Y.Z>" >&2
+    echo "Usage: deploy.sh <patch|minor|major|X.Y.Z> [--title TEXT] [--description TEXT]" >&2
     exit 1
 }
 
@@ -20,7 +20,47 @@ valid_version() {
     valid_part "${major}" && valid_part "${minor}" && valid_part "${patch}"
 }
 
-if [[ $# -ne 1 ]]; then
+request=""
+title=""
+description=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --title)
+            if [[ $# -lt 2 || -z "${2}" ]]; then
+                usage
+            fi
+            title="$2"
+            shift 2
+            ;;
+        --description)
+            if [[ $# -lt 2 || -z "${2}" ]]; then
+                usage
+            fi
+            description="$2"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            usage
+            ;;
+        *)
+            if [[ -n "${request}" ]]; then
+                usage
+            fi
+            request="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -n "${request}" && $# -gt 0 ]]; then
+    usage
+fi
+
+if [[ -z "${request}" ]]; then
     usage
 fi
 
@@ -58,7 +98,6 @@ if [[ "${local_head}" != "${remote_head}" ]]; then
     exit 1
 fi
 
-request="$1"
 if [[ "${request}" == v* ]]; then
     request="${request#v}"
 fi
@@ -111,6 +150,17 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
     exit 1
 fi
 
-git tag "${tag}"
+if [[ -n "${title}" || -n "${description}" ]]; then
+    if [[ -z "${title}" ]]; then
+        title="${tag}"
+    fi
+    if [[ -n "${description}" ]]; then
+        git tag -a "${tag}" -m "${title}" -m "${description}"
+    else
+        git tag -a "${tag}" -m "${title}"
+    fi
+else
+    git tag "${tag}"
+fi
 git push origin "refs/tags/${tag}"
 echo "Tagged ${tag} and pushed it. The release workflow will publish meowboard.tar.gz."

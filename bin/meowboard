@@ -303,21 +303,6 @@ class ClipboardApp(Gtk.Window):
             0
         )
 
-        title = Gtk.Label()
-
-        title.set_markup(
-            "<b><big>🐱 Meowboard</big></b>"
-        )
-
-        title.set_xalign(0)
-
-        header.pack_start(
-            title,
-            True,
-            True,
-            0
-        )
-
         self.preview_toggle = Gtk.CheckButton(
             label="Preview"
         )
@@ -325,13 +310,6 @@ class ClipboardApp(Gtk.Window):
         self.preview_toggle.connect(
             "toggled",
             self.on_preview_toggled
-        )
-
-        header.pack_end(
-            self.preview_toggle,
-            False,
-            False,
-            0
         )
 
         settings_button = Gtk.Button.new_from_icon_name(
@@ -344,14 +322,6 @@ class ClipboardApp(Gtk.Window):
             self.open_settings
         )
 
-        header.pack_end(
-            settings_button,
-            False,
-            False,
-            0
-        )
-
-        # Search
         self.search = Gtk.SearchEntry()
 
         self.search.set_placeholder_text(
@@ -368,8 +338,22 @@ class ClipboardApp(Gtk.Window):
             self.on_key_press
         )
 
-        main.pack_start(
+        header.pack_start(
             self.search,
+            True,
+            True,
+            0
+        )
+
+        header.pack_end(
+            self.preview_toggle,
+            False,
+            False,
+            0
+        )
+
+        header.pack_end(
+            settings_button,
             False,
             False,
             0
