@@ -1338,8 +1338,27 @@ class ClipboardApp(Gtk.Window):
             min(index, len(rows) - 1)
         )
 
+        self.select_list_index(index)
+
+        return True
+
+    def select_list_index(self, index):
+
+        rows = self.listbox.get_children()
+
+        if not rows:
+            return
+
+        index = max(
+            0,
+            min(index, len(rows) - 1)
+        )
+
         row = rows[index]
         self.listbox.select_row(row)
+        self.reveal_row(row)
+
+    def reveal_row(self, row):
 
         adjustment = (
             self.history_scroll.get_vadjustment()
@@ -1361,8 +1380,6 @@ class ClipboardApp(Gtk.Window):
                 bottom - adjustment.get_page_size()
             )
 
-        return True
-
     # ======================================================
     # Delete
     # ======================================================
@@ -1372,10 +1389,17 @@ class ClipboardApp(Gtk.Window):
         button=None
     ):
 
+        row = self.listbox.get_selected_row()
         item = self.get_selected_item()
 
         if item is None:
             return
+
+        deleted_index = (
+            row.get_index()
+            if row is not None
+            else 0
+        )
 
         if item in self.history:
             self.history.remove(item)
@@ -1383,6 +1407,7 @@ class ClipboardApp(Gtk.Window):
         self.save_history()
 
         self.update_list()
+        self.select_list_index(deleted_index)
 
     # ======================================================
     # Clear
