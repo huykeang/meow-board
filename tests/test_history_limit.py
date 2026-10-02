@@ -102,6 +102,105 @@ class DeleteKeyTests(unittest.TestCase):
         self.assertEqual(calls, ["deleted"])
 
 
+class DeleteSelectionTests(unittest.TestCase):
+    def _app_deleting_index(self, history, index):
+        selected = []
+        rows_after = []
+
+        class Row:
+            def __init__(self, row_index):
+                self._index = row_index
+
+            def get_index(self):
+                return self._index
+
+            def get_allocation(self):
+                return SimpleNamespace(y=0, height=20)
+
+        class ListBox:
+            def get_selected_row(self):
+                return Row(index)
+
+            def get_children(self):
+                return rows_after
+
+            def select_row(self, row):
+                selected.append(row)
+
+        app = SimpleNamespace(
+            history=list(history),
+            filtered_history=list(history),
+            listbox=ListBox(),
+            save_history=lambda: None,
+            history_scroll=SimpleNamespace(
+                get_vadjustment=lambda: SimpleNamespace(
+                    get_value=lambda: 0,
+                    get_page_size=lambda: 100,
+                    set_value=lambda value: None,
+                )
+            ),
+        )
+
+        def update_list():
+            app.filtered_history = list(app.history)
+            rows_after[:] = [
+                Row(row_index)
+                for row_index in range(len(app.history))
+            ]
+
+        app.update_list = update_list
+        app.get_selected_item = (
+            lambda: MEOWBOARD.ClipboardApp.get_selected_item(app)
+        )
+        app.select_list_index = (
+            lambda index: MEOWBOARD.ClipboardApp.select_list_index(
+                app,
+                index,
+            )
+        )
+        app.reveal_row = (
+            lambda row: MEOWBOARD.ClipboardApp.reveal_row(app, row)
+        )
+        app._selected = selected
+        return app
+
+    def test_deleting_last_item_selects_the_previous_clipboard(self):
+        app = self._app_deleting_index(
+            ["clipboard1", "clipboard2", "clipboard3", "clipboard4"],
+            3,
+        )
+
+        MEOWBOARD.ClipboardApp.delete_selected(app)
+
+        self.assertEqual(
+            app.history,
+            ["clipboard1", "clipboard2", "clipboard3"],
+        )
+        self.assertEqual(app._selected[-1].get_index(), 2)
+
+    def test_deleting_middle_item_keeps_the_same_list_index(self):
+        app = self._app_deleting_index(
+            ["clipboard1", "clipboard2", "clipboard3", "clipboard4"],
+            1,
+        )
+
+        MEOWBOARD.ClipboardApp.delete_selected(app)
+
+        self.assertEqual(
+            app.history,
+            ["clipboard1", "clipboard3", "clipboard4"],
+        )
+        self.assertEqual(app._selected[-1].get_index(), 1)
+
+    def test_deleting_the_only_item_leaves_the_list_empty(self):
+        app = self._app_deleting_index(["clipboard1"], 0)
+
+        MEOWBOARD.ClipboardApp.delete_selected(app)
+
+        self.assertEqual(app.history, [])
+        self.assertEqual(app._selected, [])
+
+
 class ListActivationTests(unittest.TestCase):
     def test_list_requires_second_click_to_activate_selected_row(self):
         activation_modes = []
