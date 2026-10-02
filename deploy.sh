@@ -150,15 +150,17 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
     exit 1
 fi
 
-if [[ -n "${title}" || -n "${description}" ]]; then
-    if [[ -z "${title}" ]]; then
-        title="${tag}"
-    fi
-    if [[ -n "${description}" ]]; then
-        git tag -a "${tag}" -m "${title}" -m "${description}"
-    else
-        git tag -a "${tag}" -m "${title}"
-    fi
+notes=""
+if [[ -n "${title}" && -n "${description}" ]]; then
+    notes="${title}"$'\n\n'"${description}"
+elif [[ -n "${title}" ]]; then
+    notes="${title}"
+elif [[ -n "${description}" ]]; then
+    notes="${description}"
+fi
+
+if [[ -n "${notes}" ]]; then
+    git tag -a "${tag}" -m "${tag}" -m "${notes}"
 else
     git tag "${tag}"
 fi

@@ -23,21 +23,24 @@ jobs:
         run: |
           git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/meowboard-release"
           kind="$(git for-each-ref refs/meowboard-release --format='%(objecttype)')"
-          title=""
           notes=""
           if [[ "${kind}" == "tag" ]]; then
-            title="$(git for-each-ref refs/meowboard-release --format='%(contents:subject)')"
-            notes="$(git for-each-ref refs/meowboard-release --format='%(contents:body)')"
-          fi
-          if [[ -z "${title}" ]]; then
-            title="${GITHUB_REF_NAME}"
+            subject="$(git for-each-ref refs/meowboard-release --format='%(contents:subject)')"
+            body="$(git for-each-ref refs/meowboard-release --format='%(contents:body)')"
+            if [[ "${subject}" == "${GITHUB_REF_NAME}" ]]; then
+              notes="${body}"
+            elif [[ -n "${body//[[:space:]]/}" ]]; then
+              notes="${subject}"$'\n\n'"${body}"
+            else
+              notes="${subject}"
+            fi
           fi
           if [[ -n "${notes//[[:space:]]/}" ]]; then
             gh release create "${GITHUB_REF_NAME}" meowboard.tar.gz \
-              --title "${title}" \
+              --title "${GITHUB_REF_NAME}" \
               --notes "${notes}"
           else
             gh release create "${GITHUB_REF_NAME}" meowboard.tar.gz \
-              --title "${title}" \
+              --title "${GITHUB_REF_NAME}" \
               --generate-notes
           fi

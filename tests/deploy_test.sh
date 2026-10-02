@@ -78,8 +78,8 @@ origin="$(git -C "${work}" remote get-url origin)"
 subject="$(git -C "${origin}" for-each-ref refs/tags/v1.0.0 --format='%(contents:subject)')"
 body="$(git -C "${origin}" for-each-ref refs/tags/v1.0.0 --format='%(contents:body)')"
 body="${body%$'\n'}"
-[[ "${subject}" == "Header search" ]]
-[[ "${body}" == "Search sits on the top left." ]]
+[[ "${subject}" == "v1.0.0" ]]
+[[ "${body}" == $'Header search\n\nSearch sits on the top left.' ]]
 
 work="$(make_repo minor)"
 tag_repo "${work}" v1.0.0
