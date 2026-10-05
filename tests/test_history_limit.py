@@ -200,6 +200,123 @@ class DeleteSelectionTests(unittest.TestCase):
         self.assertEqual(app.history, [])
         self.assertEqual(app._selected, [])
 
+    def test_deleting_keeps_the_selected_row_in_view(self):
+        row_height = 36
+        selected_index = 12
+        page_size = 180
+        history = [
+            f"clipboard{index}"
+            for index in range(30)
+        ]
+        laid_out = {"ready": False}
+        rows_after = []
+
+        class Adjustment:
+            def __init__(self):
+                self.value = selected_index * row_height
+
+            def get_value(self):
+                return self.value
+
+            def get_page_size(self):
+                return page_size
+
+            def set_value(self, value):
+                self.value = value
+
+        class Row:
+            def __init__(self, row_index):
+                self._index = row_index
+                self._handlers = []
+
+            def get_index(self):
+                return self._index
+
+            def get_allocation(self):
+                if not laid_out["ready"]:
+                    return SimpleNamespace(y=0, height=1)
+
+                return SimpleNamespace(
+                    y=self._index * row_height,
+                    height=row_height,
+                )
+
+            def connect(self, signal, callback):
+                handler_id = len(self._handlers)
+                self._handlers.append((signal, callback))
+                return handler_id
+
+            def disconnect(self, handler_id):
+                self._handlers[handler_id] = None
+
+            def allocate(self):
+                allocation = self.get_allocation()
+                for handler in list(self._handlers):
+                    if handler is None:
+                        continue
+                    signal, callback = handler
+                    if signal == "size-allocate":
+                        callback(self, allocation)
+
+        adjustment = Adjustment()
+
+        class ListBox:
+            def get_selected_row(self):
+                return Row(selected_index)
+
+            def get_children(self):
+                return rows_after
+
+            def select_row(self, row):
+                pass
+
+        app = SimpleNamespace(
+            history=list(history),
+            filtered_history=list(history),
+            listbox=ListBox(),
+            save_history=lambda: None,
+            history_scroll=SimpleNamespace(
+                get_vadjustment=lambda: adjustment
+            ),
+        )
+
+        def update_list():
+            app.filtered_history = list(app.history)
+            adjustment.set_value(0)
+            laid_out["ready"] = False
+            rows_after[:] = [
+                Row(row_index)
+                for row_index in range(len(app.history))
+            ]
+
+        app.update_list = update_list
+        app.get_selected_item = (
+            lambda: MEOWBOARD.ClipboardApp.get_selected_item(app)
+        )
+        app.select_list_index = (
+            lambda index: MEOWBOARD.ClipboardApp.select_list_index(
+                app,
+                index,
+            )
+        )
+        app.reveal_row = (
+            lambda row: MEOWBOARD.ClipboardApp.reveal_row(app, row)
+        )
+
+        MEOWBOARD.ClipboardApp.delete_selected(app)
+
+        laid_out["ready"] = True
+        for row in rows_after:
+            row.allocate()
+
+        selected_top = selected_index * row_height
+        selected_bottom = selected_top + row_height
+        visible_top = adjustment.get_value()
+        visible_bottom = visible_top + page_size
+
+        self.assertLess(selected_top, visible_bottom)
+        self.assertGreater(selected_bottom, visible_top)
+
 
 class ListActivationTests(unittest.TestCase):
     def test_list_requires_second_click_to_activate_selected_row(self):

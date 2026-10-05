@@ -1360,10 +1360,31 @@ class ClipboardApp(Gtk.Window):
 
     def reveal_row(self, row):
 
+        allocation = row.get_allocation()
+
+        # A rebuilt row reports a 1px placeholder until GTK
+        # allocates it. Scrolling then leaves the viewport
+        # at the top, so wait for the real position.
+        if allocation.height <= 1:
+
+            def on_size_allocate(widget, allocated):
+
+                if allocated.height <= 1:
+                    return
+
+                widget.disconnect(handler_id)
+                self.reveal_row(widget)
+
+            handler_id = row.connect(
+                "size-allocate",
+                on_size_allocate
+            )
+
+            return
+
         adjustment = (
             self.history_scroll.get_vadjustment()
         )
-        allocation = row.get_allocation()
         top = allocation.y
         bottom = top + allocation.height
         visible_top = adjustment.get_value()
